@@ -14,13 +14,18 @@ The framework is content-independent. Tabs, slides, and labels are not tied to a
 
 ## Tab System
 
-The top-level page (`app/page.tsx`) renders a **sticky tab navigation bar**. Each tab represents a narrative section of the presentation.
+The top-level page (`app/page.tsx`) wraps `DeckShell` in a `<Suspense>` boundary. `DeckShell` (`app/components/DeckShell.tsx`) renders the **sticky tab navigation bar** and all tab content. Each tab represents a narrative section of the presentation.
 
 ### How tabs work
 
-- Tabs are defined in a `tabs` array in `app/page.tsx`.
-- Each tab has an `id` (kebab-case slug) and a `label` (display name).
-- The active tab has an underline indicator. Only the components belonging to the active tab are rendered.
+- Tabs are managed by `useTabManager` in `app/hooks/useTabManager.ts` and defined via `INITIAL_TABS` in `DeckShell.tsx`. Each `TabConfig` carries an `id`, `label`, and `slides` array (slide component list).
+- The active tab is **synced to the URL** via the `?tab=` query parameter (e.g., `/?tab=gap`). This means:
+  - Switching tabs updates the browser URL.
+  - Sharing a URL opens the correct tab directly.
+  - Browser back/forward navigation moves between tabs.
+  - Refreshing the page preserves the active tab.
+- If the `?tab=` parameter is missing or invalid, the first tab is shown as the default.
+- The active tab has an underline indicator. Slides for the active tab are rendered via `.map()` — no manual conditional blocks needed.
 - Tab names are chosen by the deck creator to match their narrative structure.
 
 ### Example (current deck)
@@ -36,11 +41,30 @@ The current deck uses these tabs as an example, but a different topic would have
 
 A different deck might use tabs like "Context", "Approach", "Results", "Roadmap" — the framework doesn't prescribe tab names.
 
-### Adding a new tab
+### Adding a new tab (runtime)
 
-1. Add an entry to the `tabs` array in `app/page.tsx`.
-2. Add a new conditional block inside the `{/* Tab Content */}` section.
-3. Wrap each component with the `<Labeled>` wrapper (see naming convention below).
+Click the **`+`** button at the end of the tab bar. This:
+
+1. Appends a new tab with 2 placeholder slides (`SampleSlideA`, `SampleSlideB`).
+2. Automatically assigns the next available Greek prefix based on tab position.
+3. Navigates to the new tab via `?tab=<id>`.
+
+Tab state is **in-memory only** — refreshing the page resets to the 4 default tabs. To persist a new tab, add it to `INITIAL_TABS` in `DeckShell.tsx` with its slide components.
+
+### Deleting a tab (runtime)
+
+Click the **`×`** button next to a tab label. Rules:
+
+- The `×` button is only shown when **3 or more tabs** exist (minimum floor is 2 tabs).
+- Any tab can be deleted — no tab is permanently locked.
+- If the active tab is deleted, navigation falls back to the first tab.
+- Greek prefixes recalculate automatically for remaining tabs (positional, not stored).
+
+### Adding a new tab (code — permanent)
+
+1. Create slide components in `app/components/`.
+2. Add an entry to `INITIAL_TABS` in `DeckShell.tsx` with `id`, `label`, and `slides` array.
+3. URL routing is automatic — the new tab ID becomes a valid `?tab=` value.
 
 ---
 
@@ -91,7 +115,7 @@ Every slide component follows a consistent two-layer container structure, regard
 └─────────────────────────────────────┘
 ```
 
-- **`SectionWrapper`** — A `max-w-[1160px]` box with a light border (`border-[#d5e1ed]`) and `p-6` padding. Displays a bold uppercase label at the top. The label describes the slide's purpose (e.g., "PROBLEM", "APPROACH", "RESULTS").
+- **`SectionWrapper`** — A `max-w-[1160px]` box with a light border (`border-[#d5e1ed]`), **square corners** (no border-radius), and `p-6` padding. Displays a bold uppercase label at the top. The label describes the slide's purpose (e.g., "PROBLEM", "APPROACH", "RESULTS"). The outermost container must always have square corners — only inner elements may be rounded.
 - **`SectionCard`** — A rounded card (`rounded-3xl`) with a blue-tinted background (`bg-[#eaf1f8]`), border (`border-[#c0d4ea]`), and `p-8` padding. This is where all content lives.
 
 Both are defined in `app/components/shared.tsx` and should be used by every slide component.
@@ -114,30 +138,61 @@ export default function MyNewSection() {
 
 ---
 
-## Color Palette
+## Color Palette & Theming
 
-All slides use a consistent blue-navy palette. This palette is a design constant of SlideNexus, not specific to any topic:
+SlideNexus uses a CSS custom property token system that supports 10 interchangeable themes. Components never use raw hex values — they reference the 13 semantic tokens defined in `app/themes.css`.
 
-| Token              | Hex         | Usage                                    |
-|--------------------|-------------|------------------------------------------|
-| Deep navy          | `#0f2a45`   | Primary heading text                     |
-| Navy               | `#1a3d5c`   | Dark card backgrounds, active states     |
-| Blue accent        | `#2a6496`   | Highlighted / accent text                |
-| Mid blue           | `#3a7ab5`   | Secondary backgrounds                    |
-| Soft blue          | `#4a7a9e`   | Subheadings, CTAs, labels                |
-| Light blue text    | `#6b8eae`   | Descriptions, secondary text             |
-| Muted blue         | `#8aa0b8`   | Inactive tab text, collapsed labels      |
-| Pale blue          | `#94b0c8`   | Icons, subtle elements                   |
-| Border blue        | `#c0d4ea`   | Borders, dividers                        |
-| Card background    | `#eaf1f8`   | SectionCard background                   |
-| Light card         | `#f0f6fc`   | Highlighted callout backgrounds          |
-| Border outer       | `#d5e1ed`   | SectionWrapper border                    |
+### CSS Variable Tokens
+
+| Token              | CSS Variable         | Ocean default | Usage                              |
+|--------------------|----------------------|---------------|------------------------------------|
+| Heading            | `--t-heading`        | `#0f2a45`     | Primary heading text               |
+| Dark BG            | `--t-dark`           | `#1a3d5c`     | Dark card backgrounds, pill        |
+| Accent             | `--t-accent`         | `#2a6496`     | Highlighted text, underline        |
+| Label              | `--t-label`          | `#4a7a9e`     | Subheadings, CTAs, icons           |
+| Muted              | `--t-muted`          | `#6b8eae`     | Descriptions, secondary text       |
+| Inactive           | `--t-inactive`       | `#8aa0b8`     | Inactive tab text                  |
+| Icon               | `--t-icon`           | `#94b0c8`     | Icons, subtle decorative elements  |
+| Border             | `--t-border`         | `#c0d4ea`     | Inner borders, card borders        |
+| Card BG            | `--t-card`           | `#eaf1f8`     | SectionCard background             |
+| Callout BG         | `--t-callout`        | `#f0f6fc`     | Callout panel background           |
+| Border Outer       | `--t-border-outer`   | `#d5e1ed`     | SectionWrapper border, nav borders |
+| On Dark            | `--t-on-dark`        | `#ffffff`     | Text on dark backgrounds           |
+| On Dark Soft       | `--t-on-dark-soft`   | `#bfdbfe`     | Secondary text on dark backgrounds |
+
+### Usage in components
+
+```tsx
+// Correct — theme-aware
+<h3 className="text-[var(--t-heading)]">...</h3>
+<div className="bg-[var(--t-dark)]">...</div>
+
+// Wrong — hard-coded, breaks theming
+<h3 className="text-[#0f2a45]">...</h3>
+```
+
+### Available themes
+
+Ocean (default), Forest, Sunset, Lavender, Slate, Rose, Ember, Teal, Sand, Midnight.
+
+Theme switching is instant via CSS cascade — `data-theme` attributes on the outer wrapper (`DeckShell`) and per-tab `<main>` wrapper drive all color changes.
 
 ### Backgrounds for content cards within slides
 
 - **Light card:** `bg-white/80` — for neutral content items
-- **Dark card:** `bg-[#1a3d5c]` — for emphasized items (text becomes white/blue-200)
-- **Highlighted callout:** `bg-[#f0f6fc] border border-[#c0d4ea]` — for key statements
+- **Dark card:** `bg-[var(--t-dark)]` — for emphasized items (text: `text-[var(--t-on-dark)]` / `text-[var(--t-on-dark-soft)]`)
+- **Highlighted callout:** `bg-[var(--t-callout)] border border-[var(--t-border)]` — for key statements
+
+### Card layout alignment
+
+Every card that pairs decorative elements (numbers, icons) with text content must follow these rules:
+
+- **Decorative elements on top** — numbers and icons form the first row of the card. Title and description sit below them, never beside them.
+- **`flex flex-col`** on the card, with the decorative row using `flex items-center gap-2`.
+- **Equal-height cards** — use `h-full` within grid layouts so all cards in a row match.
+- **Sequential/journey content** — use card grids with a snake-flow pattern (row 1 left→right, row 2 right→left with arrow connectors), not vertical lists of inline rows.
+
+See `DEV_GUIDE.md` → Component Layout Rule for the full specification and checklist.
 
 ---
 
@@ -179,11 +234,21 @@ Icons are defined in `app/components/Icons.tsx`:
 
 ```
 app/
-├── page.tsx                          # Tab navigation + Labeled wrapper + layout
+├── page.tsx                          # Suspense boundary, renders DeckShell
 ├── components/
+│   ├── DeckShell.tsx                 # Tab navigation + Labeled wrapper + URL routing
 │   ├── shared.tsx                    # SectionWrapper, SectionCard, NegationList
 │   ├── Icons.tsx                     # Icon, XIcon
+│   ├── SampleSlideA.tsx              # Placeholder card-grid slide (used by new tabs)
+│   ├── SampleSlideB.tsx              # Placeholder list slide (used by new tabs)
 │   └── [SlideComponents].tsx         # One file per slide (see naming convention)
+├── hooks/
+│   ├── useTheme.ts                   # Global + per-tab theme state
+│   └── useTabManager.ts              # Add/remove tab state, canDelete logic
+├── utils/
+│   └── greekPrefix.ts                # Positional Greek letter derivation
+└── types/
+    └── deck.ts                       # TabConfig interface
 ```
 
 ### Current deck example
@@ -208,9 +273,9 @@ The files below are specific to the current deck topic. A different deck would h
 ## Adding a New Slide
 
 1. **Create the component** in `app/components/`. Use `SectionWrapper` and `SectionCard` as the outer structure.
-2. **Import it** in `app/page.tsx`.
-3. **Add it to the correct tab** section, wrapped in `<Labeled name="Prefix-N">`.
-4. **Follow the naming convention** — use the Greek letter prefix for that tab's position and increment the number.
+2. **Import it** in `app/components/DeckShell.tsx`.
+3. **Add it to the correct tab's `slides` array** in `INITIAL_TABS`. The `<Labeled>` wrapper and Greek prefix are generated automatically from the slide's position.
+4. **Follow the naming convention** — Greek letter prefix is positional (tab index), slide number is the index within the `slides` array.
 5. **Use the color palette and typography conventions** above for consistency.
 6. **Use SVG icons inline** for visuals — keep them as small functional components within the file or add them to `Icons.tsx` if reusable.
 
